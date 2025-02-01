@@ -1,0 +1,68 @@
+" General Settings
+set nocompatible
+set ruler
+set colorcolumn=95
+set number
+
+" Whitespace Settings
+set expandtab
+set shiftwidth=2
+set tabstop=2
+
+" Search and Highlighting
+set hls
+set incsearch
+set nostartofline
+
+" Spelling
+set spelllang=en_us
+
+" Filetype-Specific Settings
+filetype plugin indent on
+syntax enable
+
+" Markdown Settings
+au FileType markdown setlocal iskeyword+=-
+
+" Python and JavaScript Debugging
+au FileType python nnoremap <C-h> Oimport pdb;pdb.set_trace()
+au FileType javascript nnoremap <C-h> norm Odebugger
+
+" Key Mappings
+nnoremap <Space> :nohlsearch<CR>
+nnoremap - :Explore<CR>
+nnoremap K :grep! "\b<C-R><C-W>\b"<CR>:cw<CR><CR>
+nmap ,c :%s///gn<CR>
+
+" Commands and Functions
+function! s:Zdiff()
+  let ft=&ft
+  vnew | 0read #
+  exec 'setlocal nomodifiable bt=nofile bh=wipe nobl noswf ro ft=' . ft
+  windo diffthis
+endfunction
+com! Diff call s:Zdiff()
+
+function! s:DiffWithGITCheckedOut()
+  let ft=&ft
+  vnew | 0read !git show HEAD:#
+  exec 'setlocal nomodifiable bt=nofile bh=wipe nobl noswf ro ft=' . ft
+  windo diffthis
+endfunction
+com! Diffg call s:DiffWithGITCheckedOut()
+
+function! s:ReTag()
+  let tagging_command="!ctags -R --tag-relative --languages=" . &ft
+  execute tagging_command
+endfunction
+com! Tag call s:ReTag()
+
+" External Tool Integrations
+if executable("ag")
+  set grepprg=ag\ --nogroup\ --nocolor
+  let g:ctrlp_user_command = 'ag %s -l --nocolor -g ""'
+endif
+
+if executable("black")
+  let g:formatters_python = ['black']
+endif

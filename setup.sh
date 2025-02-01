@@ -1,9 +1,10 @@
-#/bin/bash
+#/bin/zsh
 
 set -x
 
-# install brew
-brew doctor || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+which brew || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+brew cleanup
 
 brew install \
   tmux \
@@ -21,9 +22,12 @@ brew install \
   eloston-chromium \
   vmware-fusion
 
+brew install --cask docker
+
 mkdir -p ~/.config/nvim
 
-ln -s $(pwd)/configs/nvim/init.lua ~/.config/nvim/init.lua
-ln -s $(pwd)/configs/tmux.conf ~/.tmux.conf
 ln -s $(pwd)/configs/zshrc ~/.zshrc
+ln -s $(pwd)/configs/tmux.conf ~/.tmux.conf
 ln -s $(pwd)/configs/gitconfig ~/.gitconfig
+ln -s $(pwd)/configs/vimrc ~/.vimrc
+ln -s $(pwd)/configs/nvim/init.lua ~/.config/nvim/init.lua
