@@ -147,7 +147,7 @@ function get_secret() {
 
 # Function to list all secrets in the keychain
 function list_secrets() {
-    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' |awk -F: '{print $2}' 2>&1)
+    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' | awk -F: '{print $2}' 2>&1)
     if [[ $? -eq 0 ]]; then
         echo "$secrets"
     else
@@ -175,7 +175,7 @@ function delete_secret() {
 
 # Function to load all secrets into environment variables
 function load_secrets() {
-    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' |awk -F: '{print $2}')
+    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' | awk -F: '{print $2}')
     if [[ -z $secrets ]]; then
         echo "No secrets found in keychain."
         return 0
@@ -219,7 +219,7 @@ function load_secret() {
 
 # Function to list secret names for tab completion
 function list_secret_names() {
-    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' |awk -F: '{print $2}' 2>&1)
+    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' | awk -F: '{print $2}' 2>&1)
     if [[ $? -ne 0 ]]; then
         return 1
     fi
@@ -295,4 +295,4 @@ function import_secrets_from_env() {
 # Start up scripts
 # ====================
 
-load_secret()
+load_secrets
