@@ -26,3 +26,4 @@ mkdir -p ~/.config/nvim
 ln -s $(pwd)/configs/nvim/init.lua ~/.config/nvim/init.lua
 ln -s $(pwd)/configs/tmux.conf ~/.tmux.conf
 ln -s $(pwd)/configs/zshrc ~/.zshrc
+ln -s $(pwd)/configs/gitconfig ~/.gitconfig

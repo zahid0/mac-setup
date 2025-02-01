@@ -1,0 +1,10 @@
+# This is Git's per-user configuration file.
+[user]
+  name = zahid0
+  email = zahid@local
+[push]
+  default = current
+[pull]
+  rebase = true
+[remote]
+  prune = true

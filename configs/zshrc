@@ -289,3 +289,10 @@ function import_secrets_from_env() {
 
     echo "Import complete."
 }
+
+
+# ====================
+# Start up scripts
+# ====================
+
+load_secret()
