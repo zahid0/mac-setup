@@ -1,0 +1,291 @@
+# ====================
+# System Configuration
+# ====================
+autoload -U colors && colors
+autoload -Uz compinit && compinit
+
+# ====================
+# Shell Customization
+# ====================
+export PS1="%{$fg[magenta]%}%4~$%{$reset_color%} "
+bindkey -v  # Enable vi keybindings
+bindkey '^R' history-incremental-pattern-search-backward
+bindkey '^W' backward-kill-word
+
+# ====================
+# History Settings
+# ====================
+HISTSIZE=10000000
+SAVEHIST=10000000
+
+setopt histignorespace      # Don't record commands starting with space
+setopt interactivecomments  # Enable # comments in interactive shell
+setopt BANG_HIST            # Treat '!' specially during expansion
+setopt EXTENDED_HISTORY     # Extended history format
+setopt INC_APPEND_HISTORY   # Immediate history writing
+setopt HIST_EXPIRE_DUPS_FIRST  # Expire duplicates first
+setopt HIST_IGNORE_ALL_DUPS    # Delete old duplicates when new ones are added
+setopt HIST_FIND_NO_DUPS      # Don't show duplicates in history search
+setopt HIST_SAVE_NO_DUPS      # Don't save duplicates in history file
+setopt HIST_REDUCE_BLANKS     # Remove extra spaces in commands
+setopt HIST_VERIFY            # Verify history expansion
+setopt HIST_BEEP              # Beep when accessing nonexistent history
+setopt nullglob               # Filename patterns without matches return nothing
+
+# ====================
+# Environment Variables
+# ====================
+export EDITOR=vim
+export PATH="/usr/local/opt/openjdk/bin:$PATH"
+
+# ====================
+# Package Manager Settings
+# ====================
+export PNPM_HOME="/Users/zahid/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+export COREPACK_ENABLE_AUTO_PIN=0
+
+# ====================
+# Aliases
+# ====================
+alias ctags=/usr/local/bin/ctags
+alias grep='egrep --color'
+alias la='ls -a'
+alias ll='ls -ltr'
+alias ls='ls -G'
+alias pip='python -m pip'
+alias record='ffmpeg -f avfoundation -framerate 30 -i "0:0" -vcodec libx265 -preset ultrafast $(date +"%Y%m%d%H%M%S").mp4'
+alias record_screen='ffmpeg -f avfoundation -framerate 30 -vsync 2 -video_size 640x480 -i "1:0" -vcodec libx265 -preset ultrafast $(date +"%Y%m%d%H%M%S").mp4'
+alias stream_screen='ffmpeg -f avfoundation -framerate 30 -vsync 2 -video_size 640x480 -i "1:0" -an -vcodec libx264 -preset ultrafast -f rtsp rtsp://localhost:8554/screen'
+alias sshgcp='ssh zahid@34.68.233.106'
+alias tag='ctags -R -f .git/tags --tag-relative --languages=Ruby'
+alias tag_md='ctags --langdef=markdown --langmap=markdown:.md --regex-markdown="/^#+ ([a-zA-Z0-9]+)/\1/" -R ./'
+alias viff='vim `git diff --name-only`'
+alias which-command=whence
+alias xgpt='sgpt --model gpt-4-1106-preview'
+alias vim=nvim
+
+# ====================
+# Functions
+# ====================
+
+# python virtual environment finder
+function venvactivate() {
+  local current_dir=${1:-$(pwd)}
+  
+  while true; do
+    if [[ "$current_dir" == "/" ]]; then
+      echo "Virtual environment not found in any parent directory."
+      return 1
+    fi
+    
+    for venv_dir in "$current_dir/.venv" "$current_dir/venv"; do
+      if [[ -d "$venv_dir" ]]; then
+        echo "Found virtual environment at: $venv_dir"
+        echo -n "Do you want to activate this virtual environment? (y/n): "
+        read response
+        
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+          source "$venv_dir/bin/activate"
+          return 0
+        fi
+      fi
+    done
+    
+    current_dir="$(dirname "$current_dir")"
+  done
+}
+
+
+# Keychain Secrets Management Functions
+
+# Function to add a new secret to the keychain
+function add_secret() {
+    local name=$1
+    local value=$2
+    
+    if security find-generic-password -s "ENV:$name" -a "env_var_account" &> /dev/null; then
+        echo "Secret '$name' already exists. Overwrite? (y/n): "
+        read -r response
+        if [[ $response =~ ^[Yy]$ ]]; then
+            delete_secret "$name" && security add-generic-password -s "ENV:$name" -a "env_var_account" -w "$value"
+            if [[ $? -eq 0 ]]; then
+                echo "Secret '$name' updated successfully."
+            else
+                echo "Failed to update secret '$name'"
+                return 1
+            fi
+        else
+            echo "Skipping secret '$name'"
+            return 0
+        fi
+    else
+        security add-generic-password -s "ENV:$name" -a "env_var_account" -w "$value"
+        if [[ $? -eq 0 ]]; then
+            echo "Secret '$name' added successfully."
+        else
+            echo "Failed to add secret '$name'"
+            return 1
+        fi
+    fi
+}
+
+# Function to retrieve and export a secret as an environment variable
+function get_secret() {
+    local name=$1
+    local value=$(security find-generic-password -s "ENV:$name" -a "env_var_account" -w 2>&1)
+    if [[ $? -eq 0 ]]; then
+        echo "$value"
+    else
+        echo "Secret '$name' not found in keychain."
+        return 1
+    fi
+}
+
+# Function to list all secrets in the keychain
+function list_secrets() {
+    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' |awk -F: '{print $2}' 2>&1)
+    if [[ $? -eq 0 ]]; then
+        echo "$secrets"
+    else
+        echo "Failed to list secrets: $secrets"
+        return 1
+    fi
+}
+
+# Function to delete a secret from the keychain
+function delete_secret() {
+    local name=$1
+    if security find-generic-password -s "ENV:$name" -a "env_var_account" &> /dev/null; then
+        security delete-generic-password -s "ENV:$name" -a "env_var_account"
+        if [[ $? -eq 0 ]]; then
+            echo "Secret '$name' deleted successfully."
+        else
+            echo "Failed to delete secret '$name'"
+            return 1
+        fi
+    else
+        echo "Secret '$name' not found in keychain."
+        return 1
+    fi
+}
+
+# Function to load all secrets into environment variables
+function load_secrets() {
+    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' |awk -F: '{print $2}')
+    if [[ -z $secrets ]]; then
+        echo "No secrets found in keychain."
+        return 0
+    fi
+    
+    echo "Loading secrets..."
+    while IFS= read -r secret; do
+        local value=$(get_secret "$secret")
+        if [[ $? -eq 0 ]]; then
+            export "$secret=$value"
+        else
+            echo "Failed to load secret '$secret'"
+        fi
+    done <<< "$secrets"
+    
+    echo "Secrets loaded successfully."
+}
+
+# Function to load a specific secret into environment variables
+function load_secret() {
+    if [ $# -ne 1 ]; then
+        echo "Usage: load_secret <secret_name>"
+        return 1
+    fi
+
+    local secret_name=$1
+    if security find-generic-password -s "ENV:$secret_name" -a "env_var_account" &> /dev/null; then
+        local value=$(get_secret "$secret_name")
+        if [[ $? -eq 0 ]]; then
+            export "$secret_name=$value"
+            echo "Secret '$secret_name' loaded successfully."
+        else
+            echo "Failed to load secret '$secret_name'"
+            return 1
+        fi
+    else
+        echo "Secret '$secret_name' not found in keychain."
+        return 1
+    fi
+}
+
+# Function to list secret names for tab completion
+function list_secret_names() {
+    local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' |awk -F: '{print $2}' 2>&1)
+    if [[ $? -ne 0 ]]; then
+        return 1
+    fi
+    echo "$secrets"
+}
+
+# Add tab completion for load_secret
+function _load_secret_completion() {
+    local words=("$@")
+    local word="${words[-1]}"
+    local secret_names=($(list_secret_names))
+    
+    for name in "${secret_names[@]}"; do
+        if [[ "$name" == "$word"* ]]; then
+            compadd "$name"
+        fi
+    done
+}
+
+compdef _load_secret_completion load_secret
+
+# Function to import secrets from a .env file
+function import_secrets_from_env() {
+    if [ $# -ne 1 ]; then
+        echo "Usage: import_secrets_from_env <path_to_env_file>"
+        return 1
+    fi
+
+    local env_file=$1
+    if [ ! -f "$env_file" ]; then
+        echo "Error: File '$env_file' not found."
+        return 1
+    fi
+
+    echo "Importing secrets from '$env_file'..."
+    
+    while IFS='=' read -r key value; do
+        key=$(echo "$key" | tr -d ' ')
+        value=$(echo "$value" | tr -d ' \t\n\r')
+        
+        if [ -z "$key" ]; then
+            continue
+        fi
+        
+        if security find-generic-password -s "ENV:$key" -a "env_var_account" &> /dev/null; then
+            read -p "Secret '$key' already exists. Overwrite? (y/n): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                delete_secret "$key" && add_secret "$key" "$value"
+                if [[ $? -eq 0 ]]; then
+                    echo "Updated secret '$key'"
+                else
+                    echo "Failed to update secret '$key'"
+                fi
+            else
+                echo "Skipping secret '$key'"
+            fi
+        else
+            add_secret "$key" "$value"
+            if [[ $? -eq 0 ]]; then
+                echo "Added secret '$key'"
+            else
+                echo "Failed to add secret '$key'"
+            fi
+        fi
+    done < "$env_file"
+
+    echo "Import complete."
+}
