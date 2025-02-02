@@ -118,6 +118,7 @@ vim.opt.foldmethod = "indent"
 vim.opt.history = 10000
 vim.opt.hls = true
 vim.opt.colorcolumn = "80"
+vim.opt.mouse = ""
 
 -- Highlight Color Column
 vim.api.nvim_set_hl(0, "ColorColumn", { ctermbg = "lightgray" })
@@ -152,7 +153,8 @@ vim.api.nvim_create_autocmd("FileType", {
 vim.keymap.set("n", "<Space>", ":nohlsearch<CR>")
 vim.keymap.set("n", "-", ":Explore<CR>")
 vim.keymap.set("n", "K", function()
-  vim.cmd.grep({ args = "\\b" .. vim.fn.expand("<cword>") .. "\\b" })
+  local word = vim.fn.expand("<cword>")
+  vim.cmd(string.format("grep! '\\b%s\\b'", word))
   vim.cmd.cw()
 end)
 

@@ -20,6 +20,7 @@ brew install \
   tor \
   mullvad-browser \
   eloston-chromium \
+  vlc \
   vmware-fusion
 
 brew install --cask docker

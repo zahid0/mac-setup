@@ -41,7 +41,7 @@ export PATH="/usr/local/opt/openjdk/bin:$PATH"
 # ====================
 # Package Manager Settings
 # ====================
-export PNPM_HOME="/Users/zahid/Library/pnpm"
+export PNPM_HOME="$HOME/Library/pnpm"
 case ":$PATH:" in
   *":$PNPM_HOME:"*) ;;
   *) export PATH="$PNPM_HOME:$PATH" ;;
@@ -60,12 +60,9 @@ alias pip='python -m pip'
 alias record='ffmpeg -f avfoundation -framerate 30 -i "0:0" -vcodec libx265 -preset ultrafast $(date +"%Y%m%d%H%M%S").mp4'
 alias record_screen='ffmpeg -f avfoundation -framerate 30 -vsync 2 -video_size 640x480 -i "1:0" -vcodec libx265 -preset ultrafast $(date +"%Y%m%d%H%M%S").mp4'
 alias stream_screen='ffmpeg -f avfoundation -framerate 30 -vsync 2 -video_size 640x480 -i "1:0" -an -vcodec libx264 -preset ultrafast -f rtsp rtsp://localhost:8554/screen'
-alias sshgcp='ssh zahid@34.68.233.106'
-alias tag='ctags -R -f .git/tags --tag-relative --languages=Ruby'
 alias tag_md='ctags --langdef=markdown --langmap=markdown:.md --regex-markdown="/^#+ ([a-zA-Z0-9]+)/\1/" -R ./'
 alias viff='vim `git diff --name-only`'
 alias which-command=whence
-alias xgpt='sgpt --model gpt-4-1106-preview'
 alias vim=nvim
 
 # ====================
@@ -177,11 +174,11 @@ function delete_secret() {
 function load_secrets() {
     local secrets=$(security dump-keychain | grep 'svce"<blob>="ENV:' | grep -o 'ENV:[^"]*' | awk -F: '{print $2}')
     if [[ -z $secrets ]]; then
-        echo "No secrets found in keychain."
+        # echo "No secrets found in keychain."
         return 0
     fi
     
-    echo "Loading secrets..."
+    # echo "Loading secrets..."
     while IFS= read -r secret; do
         local value=$(get_secret "$secret")
         if [[ $? -eq 0 ]]; then
@@ -191,7 +188,7 @@ function load_secrets() {
         fi
     done <<< "$secrets"
     
-    echo "Secrets loaded successfully."
+    # echo "Secrets loaded successfully."
 }
 
 # Function to load a specific secret into environment variables
