@@ -170,11 +170,11 @@ end)
 local function zdiff()
   local ft = vim.bo.ft
   vim.cmd("vnew | 0read #")
-  vim.bo.nomodifiable = true
+  vim.bo.modifiable = false
   vim.bo.buftype = "nofile"
   vim.bo.bufhidden = "wipe"
-  vim.bo.nobl = true
-  vim.bo.noswf = true
+  vim.bo.bl = false
+  vim.bo.swf = false
   vim.bo.ro = true
   vim.bo.ft = ft
   vim.cmd("windo diffthis")
@@ -183,11 +183,11 @@ end
 local function diff_with_git_checked_out()
   local ft = vim.bo.ft
   vim.cmd("vnew | 0read !git show HEAD:#")
-  vim.bo.nomodifiable = true
+  vim.bo.modifiable = false
   vim.bo.buftype = "nofile"
   vim.bo.bufhidden = "wipe"
-  vim.bo.nobl = true
-  vim.bo.noswf = true
+  vim.bo.bl = false
+  vim.bo.swf = false
   vim.bo.ro = true
   vim.bo.ft = ft
   vim.cmd("windo diffthis")
