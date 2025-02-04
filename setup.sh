@@ -21,6 +21,7 @@ brew install \
   mullvad-browser \
   eloston-chromium \
   vlc \
+  audacity \
   vmware-fusion
 
 brew install --cask docker
