@@ -8,3 +8,5 @@
   rebase = true
 [remote]
   prune = true
+[core]
+	pager = less -R -x2
