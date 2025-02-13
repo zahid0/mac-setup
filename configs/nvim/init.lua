@@ -158,9 +158,6 @@ vim.keymap.set("n", "K", function()
   vim.cmd.cw()
 end)
 
-vim.keymap.set("n", "<C-l>", ":term rspec %:<C-r>=line('.')<CR><CR>")
-vim.keymap.set("n", "<C-k>", ":term docker-compose exec app zeus rspec %:<C-r>=line('.')<CR><CR>")
-
 vim.keymap.set("n", ",c", function()
   vim.cmd.s({ args = "//", args = "gn" })
 end)

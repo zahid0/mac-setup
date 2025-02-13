@@ -21,6 +21,7 @@ brew install \
   mullvad-browser \
   eloston-chromium \
   vlc \
+  ffmpeg \
   audacity \
   vmware-fusion
 
@@ -33,3 +34,4 @@ ln -s $(pwd)/configs/tmux.conf ~/.tmux.conf
 ln -s $(pwd)/configs/gitconfig ~/.gitconfig
 ln -s $(pwd)/configs/vimrc ~/.vimrc
 ln -s $(pwd)/configs/nvim/init.lua ~/.config/nvim/init.lua
+ln -s $(pwd)/scripts/pyformat.sh /usr/local/bin/pyformat

@@ -4,6 +4,7 @@
   email = zahid@local
 [push]
   default = current
+  followTags = true
 [pull]
   rebase = true
 [remote]
