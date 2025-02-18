@@ -42,6 +42,139 @@ local plugins = {
     enabled = true,
     dev = { true },
     config = function()
+      -- Base objects
+      local base_chat = {
+        chat = true,
+        command = false,
+        system_prompt = "You are a general AI assistant.\n\n"
+        .. "The user provided the additional info about how they would like you to respond:\n\n"
+        .. "- If you're unsure don't guess and say you don't know instead.\n"
+        .. "- Ask question if you need clarification to provide better answer.\n"
+        .. "- Think deeply and carefully from first principles step by step.\n"
+        .. "- Zoom out first to see the big picture and then zoom in to details.\n"
+        .. "- Use Socratic method to improve your thinking and coding skills.\n"
+        .. "- Don't elide any code from your output if the answer requires coding.\n"
+        .. "- Take a deep breath; You've got this!\n",
+      }
+
+      local base_command = {
+        chat = false,
+        command = true,
+        system_prompt = "You are an AI working as a code editor.\n\n"
+        .. "Please AVOID COMMENTARY OUTSIDE OF THE SNIPPET RESPONSE.\n"
+        .. "START AND END YOUR ANSWER WITH:\n\n```",
+      }
+
+      local function merge_tables(base, overrides)
+        local result = {}
+        for k, v in pairs(base) do
+          if type(v) == "table" then
+            result[k] = type(overrides[k]) == "table" and merge_tables(v, overrides[k]) or {}
+          else
+            result[k] = v
+          end
+        end
+        for k, v in pairs(overrides) do
+          if type(v) == "table" then
+            result[k] = merge_tables(result[k] or {}, v)
+          else
+            result[k] = v
+          end
+        end
+        return result
+      end
+
+      local function get_models(cache_file)
+        if vim.fn.filereadable(cache_file) ~= 0 then
+          local file, err = io.open(cache_file, "r")
+          if not file then
+            print("Failed to open file for reading: " .. cache_file .. "\nError: " .. err)
+            return nil
+          end
+          local content = file:read("*a")
+          file:close()
+          local tbl = vim.json.decode(content)
+          local groq_models = tbl.groq_models
+          if os.time() - tbl.updated < 86400 then
+            return groq_models
+          end
+        end
+        return nil
+      end
+
+      local cache_dir = vim.fn.stdpath('cache') .. '/gp'
+
+      if not vim.fn.isdirectory(cache_dir) then
+        vim.fn.mkdir(cache_dir, 'p')
+      end
+
+      local cache_file = cache_dir ..  '/models.json'
+
+      local groq_models = get_models(cache_file)
+
+      if groq_models == nil then
+        print("Fetching groq models ...")
+        local content = vim.fn.system(string.format(
+        "curl -s -H \"Authorization: Bearer %s\" https://api.groq.com/openai/v1/models | jq -r '[.data[].id]'",
+        os.getenv("GROQ_API_KEY")
+        ))
+        groq_models = vim.json.decode(content)
+        local json = vim.json.encode({
+          updated = os.time(),
+          groq_models = groq_models
+        })
+        local file = io.open(cache_file, "w")
+        if not file then
+          print("Failed to open file for writing: " .. file_path)
+          return
+        end
+        file:write(json)
+        file:close()
+      end
+
+      -- Create agents for each model
+      local agents = {
+        merge_tables(base_chat, {
+          name = "Codestral Chat",
+          provider = "codestral",
+          model = "codestral-latest",
+        }),
+        merge_tables(base_command, {
+          name = "CodestralCoder",
+          provider = "codestral",
+          model = "codestral-latest",
+        }),
+      }
+
+      for _seq, model_id in pairs(groq_models) do
+        -- Skip models containing "whisper" in their name
+        if not string.match(model_id, "whisper") then
+          -- Base model configuration
+          local model_config = { model = model_id }
+          -- Add reasoning_format if model contains "deepseekr1"
+          if string.match(model_id, "deepseek%-r1") then
+            model_config.reasoning_format = "hidden"
+          end
+
+          -- Create chat agent
+          local chat_agent = merge_tables(base_chat, {
+            name = string.format("Groq %s (Chat)", model_id),
+            provider = "groq",
+            model = model_config
+          })
+          table.insert(agents, chat_agent)
+
+          -- Create command agent
+          local command_agent = merge_tables(base_command, {
+            name = string.format("Groq %s (Command)", model_id),
+            provider = "groq",
+            model = model_config
+          })
+          table.insert(agents, command_agent)
+        end
+      end
+
+
       require("gp").setup({
         log_sensitive = true,
         providers = {
@@ -57,42 +190,7 @@ local plugins = {
             disable = false,
           },
         },
-        agents = {
-          {
-            name = "deepseekr1",
-            provider = "groq",
-            chat = true,
-            command = false,
-            system_prompt = "You are a senior Software Engineer.",
-            model = "deepseek-r1-distill-llama-70b"
-          },
-          {
-            name = "Codestral Chat",
-            provider = "codestral",
-            chat = true,
-            command = false,
-            model = { model = "codestral-latest", temperature = 1.1, top_p = 1 },
-            system_prompt = "You are a general AI assistant.\n\n"
-                    .. "The user provided the additional info about how they would like you to respond:\n\n"
-                    .. "- If you're unsure don't guess and say you don't know instead.\n"
-                    .. "- Ask question if you need clarification to provide better answer.\n"
-                    .. "- Think deeply and carefully from first principles step by step.\n"
-                    .. "- Zoom out first to see the big picture and then zoom in to details.\n"
-                    .. "- Use Socratic method to improve your thinking and coding skills.\n"
-                    .. "- Don't elide any code from your output if the answer requires coding.\n"
-                    .. "- Take a deep breath; You've got this!\n",
-          },
-          {
-            name = "CodestralCoder",
-            provider = "codestral",
-            chat = false,
-            command = true,
-            model = { model = "codestral-latest", temperature = 0.8, top_p = 1 },
-            system_prompt = "You are an AI working as a code editor.\n\n"
-                    .. "Please AVOID COMMENTARY OUTSIDE OF THE SNIPPET RESPONSE.\n"
-                    .. "START AND END YOUR ANSWER WITH:\n\n```",
-          },
-        },
+        agents = agents,
       })
     end
   },
