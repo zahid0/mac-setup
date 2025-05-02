@@ -41,6 +41,8 @@ export PATH="/usr/local/opt/openjdk/bin:$PATH"
 # ====================
 # Package Manager Settings
 # ====================
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
 export PNPM_HOME="$HOME/Library/pnpm"
 case ":$PATH:" in
   *":$PNPM_HOME:"*) ;;

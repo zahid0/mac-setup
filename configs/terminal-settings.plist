@@ -1,0 +1,18 @@
+{
+    "Default Window Settings" = Pro;
+    "Startup Window Settings" = Pro;
+    FontSize = 18;
+    "Window Settings" =     {
+        Pro =         {
+            shellExitAction = 1;
+            FontAntialias = 1;
+            BlinkText = 1;
+            CommandString = "tmux a || tmux";
+            DisableANSIColor = 0;
+            RunCommandAsShell = 0;
+            TerminalType = "xterm-256colour";
+            UseBoldFonts = 1;
+            UseBrightBold = 0;
+        };
+    };
+}
