@@ -125,11 +125,11 @@ local plugins = {
         })
         local file = io.open(cache_file, "w")
         if not file then
-          print("Failed to open file for writing: " .. file_path)
-          return
+          print("Failed to open file for writing: " .. cache_file)
+        else
+          file:write(json)
+          file:close()
         end
-        file:write(json)
-        file:close()
       end
 
       -- Create agents for each model
@@ -150,9 +150,9 @@ local plugins = {
         -- Skip models containing "whisper" in their name
         if not string.match(model_id, "whisper") then
           -- Base model configuration
-          local model_config = { model = model_id }
+          local model_config = { model = model_id, max_tokens = 16384 }
           -- Add reasoning_format if model contains "deepseekr1"
-          if string.match(model_id, "deepseek%-r1") then
+          if string.match(model_id, "deepseek%-r1") or string.match(model_id, "qwq") then
             model_config.reasoning_format = "hidden"
           end
 
