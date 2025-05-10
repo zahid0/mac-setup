@@ -150,10 +150,14 @@ local plugins = {
         -- Skip models containing "whisper" in their name
         if not string.match(model_id, "whisper") then
           -- Base model configuration
-          local model_config = { model = model_id, max_tokens = 16384 }
-          -- Add reasoning_format if model contains "deepseekr1"
+          local model_config = { model = model_id }
+          -- Add reasoning_format if model contains "deepseekr1" or "qwq"
           if string.match(model_id, "deepseek%-r1") or string.match(model_id, "qwq") then
             model_config.reasoning_format = "hidden"
+          end
+          -- Increase max_tokens for qwq
+          if string.match(model_id, "qwq") then
+            model_config.max_tokens = 131072
           end
 
           -- Create chat agent
