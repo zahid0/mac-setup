@@ -1,4 +1,7 @@
-autoflake --in-place --remove-unused-variables --remove-all-unused-imports -r .
-isort .
+autoflake --in-place --remove-all-unused-imports --remove-unused-variables --remove-duplicate-keys -r .
+
+isort . --profile black
+
 black .
-flake8 . --exclude node_modules --max-line-length=180
+
+flake8 . --exclude='node_modules,.venv,__pycache__' --ignore=E203,E501,W503

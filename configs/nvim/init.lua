@@ -84,7 +84,7 @@ local plugins = {
         return result
       end
 
-      local function get_models(cache_file)
+      local function get_models(cache_file, provider, api_url, api_key_env)
         if vim.fn.filereadable(cache_file) ~= 0 then
           local file, err = io.open(cache_file, "r")
           if not file then
@@ -94,41 +94,75 @@ local plugins = {
           local content = file:read("*a")
           file:close()
           local tbl = vim.json.decode(content)
-          local groq_models = tbl.groq_models
-          if os.time() - tbl.updated < 86400 then
-            return groq_models
+          local models = tbl[provider .. "_models"]
+          local updated_at = tbl[provider .. "_updated"]
+          if models and updated_at and os.time() - updated_at < 86400 then
+            return models
           end
         end
-        return nil
-      end
-
-      local cache_dir = vim.fn.stdpath('cache') .. '/gp'
-
-      if not vim.fn.isdirectory(cache_dir) then
-        vim.fn.mkdir(cache_dir, 'p')
-      end
-
-      local cache_file = cache_dir ..  '/models.json'
-
-      local groq_models = get_models(cache_file)
-
-      if groq_models == nil then
-        print("Fetching groq models ...")
+        print(string.format("Fetching %s models ...", provider))
         local content = vim.fn.system(string.format(
-        "curl -s -H \"Authorization: Bearer %s\" https://api.groq.com/openai/v1/models | jq -r '[.data[].id]'",
-        os.getenv("GROQ_API_KEY")
+          "curl -s -H \"Authorization: Bearer %s\" %s | jq -r '[.data[].id]'",
+          os.getenv(api_key_env),
+          api_url
         ))
-        groq_models = vim.json.decode(content)
-        local json = vim.json.encode({
-          updated = os.time(),
-          groq_models = groq_models
-        })
-        local file = io.open(cache_file, "w")
+        local models = vim.json.decode(content)
+
+        -- Update cache file with new data
+        local file = io.open(cache_file, "r")
+        local existing_content = file:read("*a")
+        file:close()
+
+        file = io.open(cache_file, "w")
         if not file then
           print("Failed to open file for writing: " .. cache_file)
         else
-          file:write(json)
+          if existing_content ~= "" then
+            local tbl = vim.json.decode(existing_content)
+            tbl[provider .. "_models"] = models
+            tbl[provider .. "_updated"] = os.time()
+            file:write(vim.json.encode(tbl))
+          else
+            local new_data = {
+              groq_models = groq_models or {},
+              groq_updated = 0,
+              openrouter_models = models,
+              openrouter_updated = os.time()
+            }
+            file:write(vim.json.encode(new_data))
+          end
           file:close()
+        end
+
+        return models
+      end
+
+      local cache_dir = vim.fn.stdpath('cache') .. '/gp'
+      if not vim.fn.isdirectory(cache_dir) then
+        vim.fn.mkdir(cache_dir, 'p')
+      end
+      local cache_file = cache_dir .. '/models.json'
+
+      -- Define providers
+      local providers = {
+        {
+          name = "groq",
+          api_key_env = "GROQ_API_KEY",
+          api_url = "https://api.groq.com/openai/v1/models"
+        },
+        {
+          name = "openrouter",
+          api_key_env = "OPENROUTER_API_KEY",
+          api_url = "https://openrouter.ai/api/v1/models"
+        }
+      }
+
+      local all_models = {}
+
+      for _, provider in ipairs(providers) do
+        local models = get_models(cache_file, provider.name, provider.api_url, provider.api_key_env)
+        if models then
+          all_models[provider.name .. "_models"] = models
         end
       end
 
@@ -146,45 +180,49 @@ local plugins = {
         }),
       }
 
-      for _seq, model_id in pairs(groq_models) do
-        -- Skip models containing "whisper" in their name
-        if not string.match(model_id, "whisper") then
-          -- Base model configuration
-          local model_config = { model = model_id }
-          -- Add reasoning_format if model contains "deepseekr1" or "qwq"
-          if string.match(model_id, "deepseek%-r1") or string.match(model_id, "qwq") then
-            model_config.reasoning_format = "hidden"
-          end
-          -- Increase max_tokens for qwq
-          if string.match(model_id, "qwq") then
-            model_config.max_tokens = 131072
-          end
+      for _, provider in ipairs(providers) do
+        for _seq, model_id in pairs(all_models[provider.name .. "_models"] or {}) do
+          -- Skip models containing "whisper" in their name
+          if not string.match(model_id, "whisper") then
+            -- Base model configuration
+            local model_config = { model = model_id }
+            -- Add reasoning_format if model contains "deepseekr1" or "qwq"
+            if string.match(model_id, "deepseek%-r1") then
+              model_config.reasoning_format = "hidden"
+            end
+            -- Increase max_tokens for qwq
+            if string.match(model_id, "qwq") then
+              model_config.max_tokens = 131072
+            end
 
-          -- Create chat agent
-          local chat_agent = merge_tables(base_chat, {
-            name = string.format("Groq %s (Chat)", model_id),
-            provider = "groq",
-            model = model_config
-          })
-          table.insert(agents, chat_agent)
+            -- Create chat agent
+            local chat_agent = merge_tables(base_chat, {
+              name = string.format("%s %s (Chat)", provider.name, model_id),
+              provider = provider.name,
+              model = model_config
+            })
+            table.insert(agents, chat_agent)
 
-          -- Create command agent
-          local command_agent = merge_tables(base_command, {
-            name = string.format("Groq %s (Command)", model_id),
-            provider = "groq",
-            model = model_config
-          })
-          table.insert(agents, command_agent)
+            -- Create command agent
+            local command_agent = merge_tables(base_command, {
+              name = string.format("%s %s (Command)", provider.name, model_id),
+              provider = provider.name,
+              model = model_config
+            })
+            table.insert(agents, command_agent)
+          end
         end
       end
-
-
       require("gp").setup({
         log_sensitive = true,
         providers = {
           groq = {
             endpoint = "https://api.groq.com/openai/v1/chat/completions",
             secret = os.getenv("GROQ_API_KEY"),
+          },
+          openrouter = {
+            endpoint = "https://openrouter.ai/api/v1/chat/completions",
+            secret = os.getenv("OPENROUTER_API_KEY"),
           },
           codestral = {
             endpoint = "https://codestral.mistral.ai/v1/chat/completions",
