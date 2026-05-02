@@ -45,6 +45,7 @@ local plugins = {
       -- Base objects
       local base_chat = {
         chat = true,
+        temperature = 0.05,
         command = false,
         system_prompt = "You are a general AI assistant.\n\n"
         .. "The user provided the additional info about how they would like you to respond:\n\n"
@@ -59,6 +60,7 @@ local plugins = {
 
       local base_command = {
         chat = false,
+        temperature = 0.05,
         command = true,
         system_prompt = "You are an AI working as a code editor.\n\n"
         .. "Please AVOID COMMENTARY OUTSIDE OF THE SNIPPET RESPONSE.\n"
@@ -108,32 +110,38 @@ local plugins = {
         ))
         local models = vim.json.decode(content)
 
+        if provider == "openrouter" then
+          local results = {}
+          for _, model in ipairs(models) do
+            if string.match(model, ":free$") then
+              table.insert(results, model)
+            end
+          end
+          models = results
+        end
+
         -- Update cache file with new data
         local file = io.open(cache_file, "r")
-        local existing_content = file:read("*a")
-        file:close()
+        local existing_content = ""
+        if file then
+          existing_content = file:read("*a")
+          file:close()
+        end
 
         file = io.open(cache_file, "w")
         if not file then
           print("Failed to open file for writing: " .. cache_file)
         else
+          local tbl = {}
           if existing_content ~= "" then
-            local tbl = vim.json.decode(existing_content)
-            tbl[provider .. "_models"] = models
-            tbl[provider .. "_updated"] = os.time()
-            file:write(vim.json.encode(tbl))
-          else
-            local new_data = {
-              groq_models = groq_models or {},
-              groq_updated = 0,
-              openrouter_models = models,
-              openrouter_updated = os.time()
-            }
-            file:write(vim.json.encode(new_data))
+            tbl = vim.json.decode(existing_content)
           end
+          tbl[provider .. "_models"] = models
+          tbl[provider .. "_updated"] = os.time()
+          local final_content = vim.json.encode(tbl)
+          file:write(final_content)
           file:close()
         end
-
         return models
       end
 
@@ -191,8 +199,8 @@ local plugins = {
               model_config.reasoning_format = "hidden"
             end
             -- Increase max_tokens for qwq
-            if string.match(model_id, "qwq") then
-              model_config.max_tokens = 131072
+            if string.match(model_id, "qwq") or string.match(model_id, "qwen3") then
+              model_config.max_tokens = 100000
             end
 
             -- Create chat agent
@@ -241,7 +249,16 @@ local plugins = {
   {
     "github/copilot.vim",
     enabled = false
+  },
+  {
+    "tpope/vim-abolish",
+    enabled = true
+  },
+  {
+    "tpope/vim-surround",
+    enabled = true
   }
+
 }
 
 -- Setup lazy.nvim
@@ -336,8 +353,54 @@ local function get_stub_from_rspec()
 end
 
 local function re_tag()
-  local ft = vim.bo.ft
-  vim.cmd(string.format("!ctags -R --tag-relative --languages=%s", ft))
+  local ft = vim.bo.filetype
+
+  local cmd = { "ctags -R --tag-relative" }
+  if ft and not ft:match "^$" then
+    table.insert(cmd, "--languages=" .. ft)
+  end
+
+  -- Find .gitignore upward
+  local function find_gitignore()
+    local dir = vim.fn.getcwd()
+    while dir ~= "/" do
+      local gitignore = dir .. "/.gitignore"
+      if vim.fn.filereadable(gitignore) == 1 then
+        return gitignore
+      end
+      dir = vim.fn.fnamemodify(dir, ":h")
+    end
+    return nil
+  end
+
+  local gitignore_path = find_gitignore()
+  if gitignore_path then
+    local file = io.open(gitignore_path, "r")
+    if file then
+      for line in file:lines() do
+        line = vim.trim(line)
+        if line ~= "" and not line:match "^#" and not line:match "^!" then
+          -- ✅ Strip leading / (root anchor in .gitignore)
+          line = line:gsub("^/", "")
+
+          -- Skip if contains single quote
+          if line:find("'", 1, true) then
+            vim.notify(
+              string.format("Skipping .gitignore entry with single quote: %s", line),
+              vim.log.levels.WARN
+            )
+          else
+            table.insert(cmd, string.format("--exclude='%s'", line))
+          end
+        end
+      end
+      file:close()
+    end
+  end
+
+  local full_cmd = table.concat(cmd, " ")
+  print("Running: " .. full_cmd)
+  vim.cmd("! " .. full_cmd)
 end
 
 -- Commands {{{1

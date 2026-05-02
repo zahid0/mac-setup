@@ -36,7 +36,8 @@ setopt nullglob               # Filename patterns without matches return nothing
 # Environment Variables
 # ====================
 export EDITOR=vim
-export PATH="/usr/local/opt/openjdk/bin:$PATH"
+export PATH="/Users/zahid/.local/bin:$PATH"
+export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
 
 # ====================
 # Package Manager Settings
@@ -53,7 +54,6 @@ export COREPACK_ENABLE_AUTO_PIN=0
 # ====================
 # Aliases
 # ====================
-alias ctags=/usr/local/bin/ctags
 alias grep='egrep --color'
 alias la='ls -a'
 alias ll='ls -ltr'
@@ -66,6 +66,7 @@ alias tag_md='ctags --langdef=markdown --langmap=markdown:.md --regex-markdown="
 alias viff='vim `git diff --name-only`'
 alias which-command=whence
 alias vim=nvim
+alias code=codium
 
 # ====================
 # Functions
@@ -74,26 +75,26 @@ alias vim=nvim
 # python virtual environment finder
 function venvactivate() {
   local current_dir=${1:-$(pwd)}
-  
+
   while true; do
     if [[ "$current_dir" == "/" ]]; then
       echo "Virtual environment not found in any parent directory."
       return 1
     fi
-    
+
     for venv_dir in "$current_dir/.venv" "$current_dir/venv"; do
       if [[ -d "$venv_dir" ]]; then
         echo "Found virtual environment at: $venv_dir"
         echo -n "Do you want to activate this virtual environment? (y/n): "
         read response
-        
+
         if [[ "$response" =~ ^[Yy]$ ]]; then
           source "$venv_dir/bin/activate"
           return 0
         fi
       fi
     done
-    
+
     current_dir="$(dirname "$current_dir")"
   done
 }
@@ -105,7 +106,7 @@ function venvactivate() {
 function add_secret() {
     local name=$1
     local value=$2
-    
+
     if security find-generic-password -s "ENV:$name" -a "env_var_account" &> /dev/null; then
         echo "Secret '$name' already exists. Overwrite? (y/n): "
         read -r response
@@ -179,7 +180,7 @@ function load_secrets() {
         # echo "No secrets found in keychain."
         return 0
     fi
-    
+
     # echo "Loading secrets..."
     while IFS= read -r secret; do
         local value=$(get_secret "$secret")
@@ -189,7 +190,7 @@ function load_secrets() {
             echo "Failed to load secret '$secret'"
         fi
     done <<< "$secrets"
-    
+
     # echo "Secrets loaded successfully."
 }
 
@@ -230,7 +231,7 @@ function _load_secret_completion() {
     local words=("$@")
     local word="${words[-1]}"
     local secret_names=($(list_secret_names))
-    
+
     for name in "${secret_names[@]}"; do
         if [[ "$name" == "$word"* ]]; then
             compadd "$name"
@@ -254,15 +255,15 @@ function import_secrets_from_env() {
     fi
 
     echo "Importing secrets from '$env_file'..."
-    
+
     while IFS='=' read -r key value; do
         key=$(echo "$key" | tr -d ' ')
         value=$(echo "$value" | tr -d ' \t\n\r')
-        
+
         if [ -z "$key" ]; then
             continue
         fi
-        
+
         if security find-generic-password -s "ENV:$key" -a "env_var_account" &> /dev/null; then
             read -p "Secret '$key' already exists. Overwrite? (y/n): " -n 1 -r
             echo
