@@ -1,0 +1,297 @@
+# ====================
+# Git worktree helpers
+#
+#   wt                        list all worktrees of the current repo
+#   wt .                      cd to the default (main) worktree
+#   wt <pattern>              cd to the worktree matching <pattern>
+#   wt -                      cd back to the previously visited worktree
+#   create_wt <name> [base]   create $WT_ROOT/<repo>/<name> and cd into it
+#   create_wt -b <br> <name>  create <name> on a different branch <br>
+#   rm_wt <name> [-f] [-D]    remove a worktree (-D also deletes its branch)
+# ====================
+
+export WT_ROOT="${WT_ROOT:-$HOME/projects/.worktrees}"
+
+# Prints "<worktree path>\t<branch>" for every worktree, main worktree first.
+function _wt_records() {
+  local line wt_path wt_branch
+  while IFS= read -r line; do
+    case "$line" in
+      worktree\ *)
+        [[ -n "$wt_path" ]] && print -r -- "$wt_path"$'\t'"$wt_branch"
+        wt_path="${line#worktree }"
+        wt_branch="(detached)"
+        ;;
+      branch\ *) wt_branch="${line#branch }" ;;
+    esac
+  done < <(git worktree list --porcelain)
+  [[ -n "$wt_path" ]] && print -r -- "$wt_path"$'\t'"$wt_branch"
+  return 0
+}
+
+# Main worktree of the current repo (correct even from inside a linked worktree).
+function _wt_main() {
+  local wt_path wt_branch
+  IFS=$'\t' read -r wt_path wt_branch < <(_wt_records) && print -r -- "$wt_path"
+}
+
+# Repository name, i.e. basename of its main worktree.
+function _wt_repo() {
+  local main
+  main="$(_wt_main)" && print -r -- "${main:t}"
+}
+
+function _wt_branch_of() {
+  local target="$1" wt_path wt_branch
+  while IFS=$'\t' read -r wt_path wt_branch; do
+    if [[ "$wt_path" == "$target" ]]; then
+      print -r -- "${wt_branch#refs/heads/}"
+      return 0
+    fi
+  done < <(_wt_records)
+  return 1
+}
+
+# Path comparisons go through :A so /tmp vs /private/tmp style symlinks still match.
+function _wt_same() {
+  [[ "${1:A}" == "${2:A}" ]]
+}
+
+function _wt_within() {
+  local dir="${1:A}" dir_target="${2:A}"
+  [[ "$dir" == "$dir_target" || "$dir" == "$dir_target"/* ]]
+}
+
+# Succeeds when a directory sits inside one of the current repo's worktrees.
+function _wt_part_of_repo() {
+  local dir="$1" wt_path wt_branch
+  while IFS=$'\t' read -r wt_path wt_branch; do
+    _wt_within "$dir" "$wt_path" && return 0
+  done < <(_wt_records)
+  return 1
+}
+
+# Resolves a pattern to exactly one worktree path, else prints candidates and fails.
+function _wt_resolve() {
+  emulate -L zsh -o extendedglob
+  local pattern="$1" wt_path wt_branch name
+  local -a fuzzy
+
+  if [[ "$pattern" == "." ]]; then
+    _wt_main
+    return 0
+  fi
+
+  while IFS=$'\t' read -r wt_path wt_branch; do
+    name="${wt_path:t}"
+    if [[ "$name" == ${~pattern} ]]; then
+      print -r -- "$wt_path"
+      return 0
+    fi
+    if [[ "$name" == *(#i)${~pattern}* || "$wt_path" == *(#i)${~pattern}* ]]; then
+      fuzzy+=("$wt_path")
+    fi
+  done < <(_wt_records)
+
+  case ${#fuzzy} in
+    0)
+      print -ru2 -- "wt: no worktree matching '$pattern'"
+      _wt_print_list >&2
+      return 1
+      ;;
+    1) print -r -- "${fuzzy[1]}"; return 0 ;;
+    *)
+      print -ru2 -- "wt: '$pattern' is ambiguous, it matches:"
+      print -rlu2 -- "${fuzzy[@]}"
+      return 1
+      ;;
+  esac
+}
+
+function _wt_print_list() {
+  local repo wt_path wt_branch
+  repo="$(_wt_repo)"
+  print -r -- "worktrees of $repo (root: $WT_ROOT/$repo):"
+  while IFS=$'\t' read -r wt_path wt_branch; do
+    wt_branch="${wt_branch#refs/heads/}"
+    if _wt_within "$PWD" "$wt_path"; then
+      print -r -- "  * ${wt_path:t}  [$wt_branch]"
+    else
+      print -r -- "    ${wt_path:t}  [$wt_branch]"
+    fi
+  done < <(_wt_records)
+}
+
+function wt() {
+  if ! git rev-parse --git-dir &> /dev/null; then
+    print -ru2 -- "wt: not inside a git repository"
+    return 1
+  fi
+
+  case ${1:-} in
+    "") _wt_print_list; return 0 ;;
+    -h|--help)
+      print -r -- "usage: wt [.|<pattern>|-]"
+      return 0
+      ;;
+    -)
+      local previous="${_WT_PREV:-$OLDPWD}"
+      if [[ -z "$previous" || ! -d "$previous" ]] || ! _wt_part_of_repo "$previous"; then
+        print -ru2 -- "wt: no previous worktree of $(_wt_repo)"
+        return 1
+      fi
+      typeset -g _WT_PREV="$PWD"
+      cd "$previous" || return 1
+      return 0
+      ;;
+  esac
+
+  local target
+  if [[ "$1" == "." ]]; then
+    target="$(_wt_main)"
+  else
+    target="$(_wt_resolve "$1")" || return 1
+  fi
+
+  if _wt_same "$target" "$PWD"; then
+    print -r -- "wt: already in ${target:t}"
+    return 0
+  fi
+
+  typeset -g _WT_PREV="$PWD"
+  cd "$target" || return 1
+}
+
+function create_wt() {
+  local branch="" base="" name=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -b|--branch)
+        [[ $# -lt 2 ]] && { print -ru2 -- "create_wt: -b needs a branch name"; return 1; }
+        branch="$2"
+        shift 2
+        ;;
+      -h|--help)
+        print -r -- "usage: create_wt [-b <branch>] <name> [base]"
+        return 0
+        ;;
+      -*) print -ru2 -- "create_wt: unknown option '$1'"; return 1 ;;
+      *)
+        if [[ -z "$name" ]]; then
+          name="$1"
+        elif [[ -z "$base" ]]; then
+          base="$1"
+        else
+          print -ru2 -- "create_wt: too many arguments"
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$name" ]]; then
+    print -ru2 -- "usage: create_wt [-b <branch>] <name> [base]"
+    return 1
+  fi
+
+  if [[ "$name" == *[[:space:]]* || "$name" == .* || "$name" == */ || "$name" == /* || "$name" == *//* || "$name" == *..* ]]; then
+    print -ru2 -- "create_wt: '$name' is not a valid worktree name"
+    return 1
+  fi
+
+  if ! git rev-parse --git-dir &> /dev/null; then
+    print -ru2 -- "create_wt: not inside a git repository"
+    return 1
+  fi
+
+  local repo target
+  repo="$(_wt_repo)"
+  target="$WT_ROOT/$repo/$name"
+  [[ -z "$branch" ]] && branch="$name"
+
+  if [[ -e "$target" ]]; then
+    print -ru2 -- "create_wt: $target already exists"
+    return 1
+  fi
+
+  mkdir -p "${target:h}" || return 1
+
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git worktree add "$target" "$branch" || return 1
+  else
+    [[ -n "$base" ]] || base="HEAD"
+    git worktree add -b "$branch" "$target" "$base" || return 1
+  fi
+
+  typeset -g _WT_PREV="$PWD"
+  cd "$target"
+}
+
+function rm_wt() {
+  local force=0 delete_branch=0 name=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--force) force=1; shift ;;
+      -D|--delete-branch) delete_branch=1; shift ;;
+      -h|--help)
+        print -r -- "usage: rm_wt [-f] [-D] <name>"
+        return 0
+        ;;
+      -*) print -ru2 -- "rm_wt: unknown option '$1'"; return 1 ;;
+      *)
+        if [[ -z "$name" ]]; then
+          name="$1"
+          shift
+        else
+          print -ru2 -- "rm_wt: too many arguments"
+          return 1
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -z "$name" ]]; then
+    print -ru2 -- "usage: rm_wt [-f] [-D] <name>"
+    return 1
+  fi
+
+  if ! git rev-parse --git-dir &> /dev/null; then
+    print -ru2 -- "rm_wt: not inside a git repository"
+    return 1
+  fi
+
+  local target main branch
+  target="$(_wt_resolve "$name")" || return 1
+  main="$(_wt_main)"
+
+  if [[ "$target" == "$main" ]]; then
+    print -ru2 -- "rm_wt: refusing to remove the main worktree ($main)"
+    return 1
+  fi
+
+  branch="$(_wt_branch_of "$target")"
+
+  if _wt_within "$PWD" "$target"; then
+    print -r -- "rm_wt: leaving ${target:t} first"
+    cd "$main" || return 1
+  fi
+
+  if (( force )); then
+    git worktree remove --force "$target" || return 1
+  else
+    git worktree remove "$target" || return 1
+  fi
+
+  if (( delete_branch )) && [[ -n "$branch" && "$branch" != "(detached)" ]]; then
+    if (( force )); then
+      git branch -D "$branch"
+    else
+      git branch -d "$branch"
+    fi
+  fi
+
+  git worktree prune
+}

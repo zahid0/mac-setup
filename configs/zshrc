@@ -295,4 +295,9 @@ function import_secrets_from_env() {
 # Start up scripts
 # ====================
 
+source "${${(%):-%N}:A:h}/wt"
+
 load_secrets
+
+# Added by Hugging Face CLI installer
+export PATH="/tmp/hfbin:$PATH"
