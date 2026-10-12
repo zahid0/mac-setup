@@ -409,10 +409,33 @@ vim.api.nvim_create_user_command("Diffg", diff_with_git_checked_out, {})
 vim.api.nvim_create_user_command("GetStub", get_stub_from_rspec, {})
 vim.api.nvim_create_user_command("Tag", re_tag, {})
 
--- Ag Configuration {{{1
-if vim.fn.executable("ag") then
-  vim.opt.grepprg = "ag --nogroup --nocolor"
-  vim.g.ctrlp_user_command = "ag %s -l --nocolor -g \"\""
+do
+  -- Prefer ripgrep, fall back to the_silver_searcher
+  if vim.fn.executable('rg') == 1 then
+    -- ------------------------------------------------------------
+    -- 1️⃣ Use ripgrep
+    -- ------------------------------------------------------------
+    --   * --vimgrep   → output format that QuickFix expects
+    --   * --no-heading → no file heading lines
+    --   * --smart-case → case‑insensitive unless pattern has uppercase
+    vim.opt.grepprg = 'rg --vimgrep --no-heading --smart-case'
+
+    -- CtrlP: show the list of files that match the pattern
+    vim.g.ctrlp_user_command = 'rg %s --files --iglob "*"'   -- keep the %s placeholder
+  elseif vim.fn.executable('ag') == 1 then
+    -- ------------------------------------------------------------
+    -- 2️⃣ Use the Silver Searcher
+    -- ------------------------------------------------------------
+    --   * --vimgrep   → makes the output compatible with quickfix
+    vim.opt.grepprg = 'ag --nogroup --nocolor --vimgrep'
+
+    -- CtrlP: ag’s “list files matching a pattern” mode
+    vim.g.ctrlp_user_command = 'ag %s -l --nocolor -g ""'
+  end
+
+  -- Ensure quickfix parses the output (both tools already use this
+  -- format, but adding it makes the config robust if you change tools).
+  vim.opt.errorformat:append('%f:%l:%c:%m')
 end
 
 -- Spell Configuration {{{1
