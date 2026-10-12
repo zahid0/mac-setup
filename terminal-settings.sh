@@ -8,7 +8,7 @@ defaults write com.apple.Terminal "Window Settings" -dict-add "Coding" '{
   BlinkText = 1;
   DisableANSIColor = 0;
   RunCommandAsShell = 0;
-  TerminalType = "xterm-256colour";
+  TerminalType = "xterm-256color";
   UseBoldFonts = 1;
   UseBrightBold = 0;
 }'
