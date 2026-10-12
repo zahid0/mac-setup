@@ -58,7 +58,11 @@ endfunction
 com! Tag call s:ReTag()
 
 " External Tool Integrations
-if executable("ag")
+" rg (ripgrep) preferred; ag is unmaintained upstream
+if executable("rg")
+  set grepprg=rg\ --vimgrep\ --no-heading\ --smart-case
+  let g:ctrlp_user_command = 'rg %s --files --iglob "*"'
+elseif executable("ag")
   set grepprg=ag\ --nogroup\ --nocolor
   let g:ctrlp_user_command = 'ag %s -l --nocolor -g ""'
 endif
