@@ -1,157 +1,92 @@
 ---
 name: background-command-runner
 description: >-
-  Manages long-running background processes (dev servers, watchers, build tools,
-  database servers, API backends, file watchers, local proxies, application
-  runtimes) via persistent tmux sessions. Start, monitor, stop, restart commands,
-  capture output and exit codes, send signals (Ctrl+C, etc.). Ideal for processes
-  that stay alive or produce ongoing logs. NOT for one-off commands that return
-  immediately — use bash exec for those.
+  Runs long-lived background processes (dev servers, watchers, databases, API
+  backends) in persistent tmux windows on a dedicated private tmux server. Start
+  processes, read output, check exit codes, send signals, restart, kill. Use for
+  processes that stay alive or stream logs; NOT for quick one-off commands (use
+  bash exec).
 ---
 
-# 🔧 Background Command Runner
+# Background Command Runner
 
-Manages **long-running, persistent background processes** using one shared tmux
-session named `background-tasks`. Each process runs in its own window
-(`bgr-<name>`) inside that session. Every window keeps a shell alive after the
-command exits, so you can inspect output, check exit codes, send signals, and
-restart commands — all without losing context.
+Run long-lived processes in tmux so they survive across tool calls. Everything
+lives on a **dedicated private tmux server** selected with `-L bgr` — a fixed,
+skill-owned socket that is entirely separate from the user's normal tmux
+sessions. On that server: one session `tasks`, one window per process named
+`bgr-<name>`. Because the window keeps an interactive shell alive after the
+command exits, the pane stays a durable transcript: re-read it, check the exit
+code, send new keys.
 
-## 🎯 When to Use
+## ⚠️ Isolation rule (read first)
 
-**Perfect for:**
-- Dev servers, watchers, build tools (`npm run dev`, `tsc --watch`)
-- Database servers, API backends, local proxies
-- Any process that runs for minutes/hours and produces ongoing output
+**Always pass `-L bgr` to every tmux command in this skill.** Never run a bare
+`tmux ...` command and never run `tmux kill-server` / `kill-session` without
+`-L bgr` — those act on the default server and will destroy the user's own tmux
+sessions. `-L bgr` uses a separate socket (e.g. `/tmp/tmux-<uid>/bgr`), so your
+commands can only ever see the skill's windows. If you must wipe everything:
+`tmux -L bgr kill-server` (skill server only) — never `tmux kill-server`.
 
-**NOT for:**
-- One-off commands that complete quickly (`ls`, `grep`, `npm install`)
-- Commands that should block the agent — use regular `bash` exec instead
+## How it works
 
-## 📋 Prerequisites
+The window is *not* one-shot: `CMD` is sent to a live shell, so when the command
+finishes the shell remains and the pane holds its output. To tell "still
+running" from "finished", the command is wrapped as `CMD; echo "[BGR_EXIT:$?]"`.
+That marker only appears once `CMD` exits, carrying its exit code — so status is
+just a grep for it. The shell, not the command, owns the pane, and the marker is
+how you detect the command ending.
 
-- **tmux** installed (`brew install tmux` / `apt install tmux`)
-- Session names: lowercase letters, numbers, hyphens only, unique
-  (each maps to a distinct window in `background-tasks`)
-- The shared session is auto-created on first use — no setup needed
+## Commands
 
-## 🚀 Usage
-
-All scripts are in `scripts/` and accept the session name as the first argument.
-
-### Start a Process
-
-```bash
-./scripts/run.sh <session-name> "<shell-command>"
-```
-
-```bash
-./scripts/run.sh dev-server 'npm run dev'
-./scripts/run.sh api-backend 'cd api && python -m uvicorn main:app --reload'
-./scripts/run.sh logger 'while true; do echo "tick at $(date)"; sleep 1; done'
-```
-
-> **💡 Use single quotes** around the command so your shell doesn't expand `$`,
-> backticks, etc. before tmux sees them. If the command itself must contain
-> literal `$` (e.g., `$HOME`), single quotes preserve them.
-
-### View Output
+All commands use the private socket `bgr` (`-L bgr`) and target the window
+`tasks:bgr-<name>`. Replace `NAME` and `CMD`, and single-quote `CMD` so `$` and
+backticks reach tmux literally. These are examples, not limits — use any tmux
+command the task needs (`resize-pane`, `wait-for`, etc.), always with `-L bgr`.
 
 ```bash
-./scripts/output.sh <session-name>          # full buffer
-./scripts/output.sh <session-name> -t       # last 20 lines
-./scripts/output.sh <session-name> -n 50    # last 50 lines
+# Start
+tmux -L bgr new-session -d -s tasks -n bgr-NAME -x 200 2>/dev/null \
+  || tmux -L bgr new-window -t tasks -n bgr-NAME
+tmux -L bgr set-option -g history-limit 10000                 # future windows
+tmux -L bgr set-option -t tasks:bgr-NAME history-limit 10000  # this window
+sleep 0.3                                                     # let the shell reach its prompt
+tmux -L bgr send-keys -t tasks:bgr-NAME "CMD; echo \"[BGR_EXIT:\$?]\"" Enter
+
+# Output: last 50 real lines. capture-pane pads the pane with blank rows down to
+# its height, so drop empty lines before tailing — otherwise you tail blanks.
+tmux -L bgr capture-pane -t tasks:bgr-NAME -p -S - | grep -v '^$' | tail -50
+
+# Status: no marker = RUNNING, marker = EXITED <code>
+tmux -L bgr capture-pane -t tasks:bgr-NAME -p -S - | grep -o '\[BGR_EXIT:[0-9]*\]' | tail -1
+
+# Signals / new command (C-c SIGINT, C-d EOF, C-z suspend)
+tmux -L bgr send-keys -t tasks:bgr-NAME C-c
+tmux -L bgr send-keys -t tasks:bgr-NAME "CMD" Enter
+
+# List / kill
+tmux -L bgr list-windows -t tasks -F '#{window_name}'
+tmux -L bgr kill-window -t tasks:bgr-NAME
 ```
 
-### Check Status
+## Reliable logs
+
+The scrollback is a convenience, not an archive: heavy output scrolls old lines
+away. For a lossless log, tee the pane to a file with `pipe-pane`:
 
 ```bash
-./scripts/status.sh <session-name>
+tmux -L bgr pipe-pane -t tasks:bgr-NAME -o 'cat >> /tmp/bgr-NAME.log'  # start
+tmux -L bgr pipe-pane -t tasks:bgr-NAME                                # stop
 ```
 
-Returns one of:
-- `RUNNING` — the command is still executing
-- `EXITED <code>` — the command completed with exit code `<code>`
-- `NOT_FOUND` — no window with that name exists
+The file records raw terminal bytes (ANSI color codes and prompt redraws
+included) and only captures output from the moment `pipe-pane` starts — pipe
+through a filter if you need clean text.
 
-### Send Keys / Signals
+## Notes
 
-```bash
-./scripts/send-keys.sh <session-name> "<keys>"
-```
-
-tmux key syntax: `C-c` (SIGINT), `C-d` (EOF), `C-z` (suspend), `Enter`,
-`Escape`, `BSpace`, `Tab`, arrows. Text is typed literally; spaces separate keys.
-
-```bash
-./scripts/send-keys.sh dev-server C-c                    # Stop
-./scripts/send-keys.sh dev-server "npm run dev" Enter    # (Re)start
-```
-
-### Restart (Stop + Start)
-
-```bash
-./scripts/restart.sh <session-name> "<new-command>"
-```
-
-Sends Ctrl+C, waits briefly, then runs the new command in the same window.
-
-### List Managed Processes
-
-```bash
-./scripts/list.sh
-```
-
-Shows all `bgr-` windows in the `background-tasks` session with status.
-
-### Kill a Process
-
-```bash
-./scripts/kill.sh <session-name>
-```
-
-Kills the process's window (SIGHUP to running process). Killing the last window
-also ends the session; the next `run.sh` recreates it automatically.
-
-## 💡 Workflow Example: Poll Until Ready
-
-```bash
-./scripts/run.sh db 'pg_ctl start -D /opt/homebrew/var/postgres'
-
-while true; do
-  ./scripts/output.sh db -n 10 | grep -q "database system is ready" && break
-  sleep 1
-done
-```
-
-## 🔍 How It Works
-
-1. `run.sh` ensures the `background-tasks` session exists (creates it on first
-   use), then opens a window named `bgr-<session-name>` for the process
-2. The command runs wrapped in an exit-code tracker:
-   `COMMAND; echo "[BGR_EXIT:$?]"`
-3. The window stays alive in a shell after the command completes — the shell
-   waits for the next command
-4. `status.sh` greps the pane for `[BGR_EXIT:<code>]`; `output.sh` captures the
-   pane contents and strips the marker
-
-## ⚠️ Notes & Limitations
-
-- Output comes from the **tmux scrollback buffer**. Heavy output scrolls old
-  lines away; use `-n <N>` to get the last N lines.
-- Exit detection relies on the `[BGR_EXIT:` marker. Avoid commands that print
-  this exact string — detection becomes unreliable.
-- All processes share one session: killing `background-tasks` kills everything.
-  Use `kill.sh` per process instead.
-- If the agent restarts, the session persists. Run `list.sh` to rediscover
-  processes at the start of a new session.
-
-### Ctrl+C and compound commands
-
-Ctrl+C on a compound command (`while ...; done; echo "[BGR_EXIT:$?]"`) may abort
-the whole thing without running the tracker, so `status.sh` can show `RUNNING`
-after a kill. To confirm: check output for `^C` with no `[BGR_EXIT:...]` after
-it. Then send a new command (or use `restart.sh`, which handles this).
-
-**After Ctrl+C the window shell is still alive** — only the running process was
-interrupted. Send new commands immediately without killing the window.
+- Names: `[a-z0-9-]` only, unique per process.
+- `-x 200` widens the pane so long lines wrap less (applies when detached; an attached client overrides the size); `history-limit` sets the real buffer depth.
+- `[BGR_EXIT:<code>]` is the exit sentinel — avoid commands that print it.
+- If the window's shell exits entirely (e.g. you started tmux with the command as its argument rather than sending keys), the pane dies and takes the transcript with it. Sending keys keeps the shell alive — and `tmux -L bgr set-option -g remain-on-exit on` preserves dead panes for later inspection.
+- After Ctrl+C the window shell survives; send a new command instead of restarting.
+- The `bgr` server persists across agent restarts and is invisible to the user's own tmux work — list windows to rediscover processes; killing the last window ends the `tasks` session, but the next start recreates it.
