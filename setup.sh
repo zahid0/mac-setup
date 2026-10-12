@@ -42,4 +42,7 @@ curl https://raw.githubusercontent.com/mullvad/encrypted-dns-profiles/refs/heads
 open mullvad-encrypted-dns-https-family.mobileconfig
 open "x-apple.systempreferences:com.apple.preference.security?Privacy.profiles"
 
-# defaults import com.apple.terminal configs/terminal-settings.plist
+# macOS UI defaults (Dock, Finder, Terminal profile with auto-tmux)
+./dock-settings.sh
+./finder-settings.sh
+./terminal-settings.sh
